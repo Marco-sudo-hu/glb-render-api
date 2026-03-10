@@ -40,7 +40,8 @@ class AnalyzeRenderRequest(BaseModel):
 
 class CompositeRenderRequest(BaseModel):
     alpha_image_url: str
-    background_image_url: str
+    background_image_url: Optional[str] = None
+    openaiFileIdRefs: Optional[List[Union[str, OpenAIFileRef]]] = None
 
 
 @app.get("/")
@@ -179,22 +180,50 @@ def composite_render(payload: CompositeRenderRequest):
         alpha_response = requests.get(payload.alpha_image_url, timeout=60)
         alpha_response.raise_for_status()
 
-        bg_response = requests.get(payload.background_image_url, timeout=60)
-        bg_response.raise_for_status()
-
         alpha_filename = f"{uuid.uuid4().hex}_alpha.png"
-        bg_filename = f"{uuid.uuid4().hex}_bg.png"
-        out_filename = f"{uuid.uuid4().hex}_composite.png"
-
         alpha_path = os.path.join(RENDERS_DIR, alpha_filename)
-        bg_path = os.path.join(RENDERS_DIR, bg_filename)
-        out_path = os.path.join(RENDERS_DIR, out_filename)
 
         with open(alpha_path, "wb") as f:
             f.write(alpha_response.content)
 
-        with open(bg_path, "wb") as f:
-            f.write(bg_response.content)
+        bg_filename = f"{uuid.uuid4().hex}_bg.png"
+        bg_path = os.path.join(RENDERS_DIR, bg_filename)
+
+        background_source = "none"
+
+        # Caso 1: sfondo via URL pubblico
+        if payload.background_image_url:
+            bg_response = requests.get(payload.background_image_url, timeout=60)
+            bg_response.raise_for_status()
+
+            with open(bg_path, "wb") as f:
+                f.write(bg_response.content)
+
+            background_source = "background_image_url"
+
+        # Caso 2: sfondo allegato dal GPT via openaiFileIdRefs
+        elif payload.openaiFileIdRefs:
+            first_bg = payload.openaiFileIdRefs[0]
+
+            if isinstance(first_bg, str):
+                raise ValueError("Background file was received only as string ID, without download_link.")
+
+            if not first_bg.download_link:
+                raise ValueError("Background file missing download_link.")
+
+            bg_response = requests.get(first_bg.download_link, timeout=60)
+            bg_response.raise_for_status()
+
+            with open(bg_path, "wb") as f:
+                f.write(bg_response.content)
+
+            background_source = "openaiFileIdRefs"
+
+        else:
+            raise ValueError("No background image source provided.")
+
+        out_filename = f"{uuid.uuid4().hex}_composite.png"
+        out_path = os.path.join(RENDERS_DIR, out_filename)
 
         alpha_img = Image.open(alpha_path).convert("RGBA")
         bg_img = Image.open(bg_path).convert("RGBA")
@@ -208,7 +237,7 @@ def composite_render(payload: CompositeRenderRequest):
         return {
             "success": True,
             "composite_image_url": composite_url,
-            "notes": "Composite created successfully from alpha foreground and background."
+            "notes": f"Composite created successfully using {background_source}."
         }
 
     except Exception as e:
