@@ -38,6 +38,11 @@ class AnalyzeRenderRequest(BaseModel):
     unit_preference: Optional[str] = "mm"
 
 
+class CompositeRenderRequest(BaseModel):
+    alpha_image_url: str
+    background_image_url: str
+
+
 @app.get("/")
 def health():
     return {"status": "ok", "service": "glb-render-api"}
@@ -167,6 +172,7 @@ def render_technical_png(
     )
     plt.close(fig)
 
+
 @app.post("/composite_render")
 def composite_render(payload: CompositeRenderRequest):
     try:
@@ -192,7 +198,6 @@ def composite_render(payload: CompositeRenderRequest):
 
         alpha_img = Image.open(alpha_path).convert("RGBA")
         bg_img = Image.open(bg_path).convert("RGBA")
-
         bg_img = bg_img.resize(alpha_img.size)
 
         composite = Image.alpha_composite(bg_img, alpha_img)
@@ -203,7 +208,7 @@ def composite_render(payload: CompositeRenderRequest):
         return {
             "success": True,
             "composite_image_url": composite_url,
-            "notes": f"Composite created successfully from alpha foreground and background."
+            "notes": "Composite created successfully from alpha foreground and background."
         }
 
     except Exception as e:
@@ -212,11 +217,10 @@ def composite_render(payload: CompositeRenderRequest):
             "composite_image_url": "",
             "notes": f"Composite failed: {str(e)}"
         }
+
+
 @app.post("/analyze_and_render")
 def analyze_and_render(payload: AnalyzeRenderRequest):
-    class CompositeRenderRequest(BaseModel):
-    alpha_image_url: str
-    background_image_url: str
     first_file = payload.openaiFileIdRefs[0] if payload.openaiFileIdRefs else None
 
     raw_refs = []
