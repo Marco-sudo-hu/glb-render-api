@@ -9,6 +9,7 @@ import uuid
 import requests
 import trimesh
 import numpy as np
+from PIL import Image
 
 import matplotlib
 matplotlib.use("Agg")
@@ -166,9 +167,56 @@ def render_technical_png(
     )
     plt.close(fig)
 
+@app.post("/composite_render")
+def composite_render(payload: CompositeRenderRequest):
+    try:
+        alpha_response = requests.get(payload.alpha_image_url, timeout=60)
+        alpha_response.raise_for_status()
 
+        bg_response = requests.get(payload.background_image_url, timeout=60)
+        bg_response.raise_for_status()
+
+        alpha_filename = f"{uuid.uuid4().hex}_alpha.png"
+        bg_filename = f"{uuid.uuid4().hex}_bg.png"
+        out_filename = f"{uuid.uuid4().hex}_composite.png"
+
+        alpha_path = os.path.join(RENDERS_DIR, alpha_filename)
+        bg_path = os.path.join(RENDERS_DIR, bg_filename)
+        out_path = os.path.join(RENDERS_DIR, out_filename)
+
+        with open(alpha_path, "wb") as f:
+            f.write(alpha_response.content)
+
+        with open(bg_path, "wb") as f:
+            f.write(bg_response.content)
+
+        alpha_img = Image.open(alpha_path).convert("RGBA")
+        bg_img = Image.open(bg_path).convert("RGBA")
+
+        bg_img = bg_img.resize(alpha_img.size)
+
+        composite = Image.alpha_composite(bg_img, alpha_img)
+        composite.save(out_path, "PNG")
+
+        composite_url = f"https://render.marcoepiscopo.com/renders/{out_filename}"
+
+        return {
+            "success": True,
+            "composite_image_url": composite_url,
+            "notes": f"Composite created successfully from alpha foreground and background."
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "composite_image_url": "",
+            "notes": f"Composite failed: {str(e)}"
+        }
 @app.post("/analyze_and_render")
 def analyze_and_render(payload: AnalyzeRenderRequest):
+    class CompositeRenderRequest(BaseModel):
+    alpha_image_url: str
+    background_image_url: str
     first_file = payload.openaiFileIdRefs[0] if payload.openaiFileIdRefs else None
 
     raw_refs = []
