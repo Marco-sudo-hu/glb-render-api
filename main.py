@@ -83,7 +83,8 @@ def render_technical_png(
     length: float,
     depth: float,
     height: float,
-    unit: str
+    unit: str,
+    transparent: bool = False
 ) -> None:
     vertices = mesh.vertices
     faces = mesh.faces
@@ -92,11 +93,12 @@ def render_technical_png(
         raise ValueError("Cannot render empty mesh.")
 
     fig = plt.figure(figsize=(12, 7), dpi=200)
-    fig.patch.set_facecolor("white")
-    ax = fig.add_subplot(111, projection="3d")
-    ax.set_facecolor("white")
+    fig.patch.set_alpha(0 if transparent else 1)
+    fig.patch.set_facecolor((1, 1, 1, 0) if transparent else "white")
 
-    # Center the mesh for a cleaner view
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_facecolor((1, 1, 1, 0) if transparent else "white")
+
     center = vertices.mean(axis=0)
     v = vertices - center
 
@@ -106,13 +108,12 @@ def render_technical_png(
         v[:, 2],
         triangles=faces,
         color="lightgray",
-        edgecolor="black",
-        linewidth=0.15,
+        edgecolor="none",
+        linewidth=0,
         antialiased=True,
         shade=False
     )
 
-    # Equal aspect ratio
     mins = v.min(axis=0)
     maxs = v.max(axis=0)
     spans = maxs - mins
@@ -123,44 +124,46 @@ def render_technical_png(
     ax.set_ylim(mid[1] - max_range, mid[1] + max_range)
     ax.set_zlim(mid[2] - max_range, mid[2] + max_range)
 
-    # Technical 3/4 view
     ax.view_init(elev=20, azim=55)
-
-    # Clean technical look
     ax.set_axis_off()
 
-    # Title top-left
-    fig.text(
-        0.03,
-        0.95,
-        title.upper(),
-        ha="left",
-        va="top",
-        fontsize=18,
-        color="black",
-        family="sans-serif",
-        weight="bold"
-    )
+    if not transparent:
+        fig.text(
+            0.03,
+            0.95,
+            title.upper(),
+            ha="left",
+            va="top",
+            fontsize=18,
+            color="black",
+            family="sans-serif",
+            weight="bold"
+        )
 
-    # Basic technical info bottom-left
-    dims_text = (
-        f"L: {length:.2f} {unit}\n"
-        f"P: {depth:.2f} {unit}\n"
-        f"H: {height:.2f} {unit}"
-    )
-    fig.text(
-        0.03,
-        0.08,
-        dims_text,
-        ha="left",
-        va="bottom",
-        fontsize=12,
-        color="black",
-        family="sans-serif"
-    )
+        dims_text = (
+            f"L: {length:.2f} {unit}\n"
+            f"P: {depth:.2f} {unit}\n"
+            f"H: {height:.2f} {unit}"
+        )
+        fig.text(
+            0.03,
+            0.08,
+            dims_text,
+            ha="left",
+            va="bottom",
+            fontsize=12,
+            color="black",
+            family="sans-serif"
+        )
 
     plt.subplots_adjust(left=0.00, right=1.00, top=0.92, bottom=0.02)
-    plt.savefig(output_path, bbox_inches="tight", pad_inches=0.05, facecolor="white")
+    plt.savefig(
+        output_path,
+        bbox_inches="tight",
+        pad_inches=0.05,
+        transparent=transparent,
+        facecolor=(1, 1, 1, 0) if transparent else "white"
+    )
     plt.close(fig)
 
 
@@ -249,11 +252,16 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
         depth = float(size[1])
         height = float(size[2])
 
-        render_filename = f"{uuid.uuid4().hex}.png"
+                render_filename = f"{uuid.uuid4().hex}.png"
         render_path = os.path.join(RENDERS_DIR, render_filename)
         render_url = f"https://render.marcoepiscopo.com/renders/{render_filename}"
 
+        alpha_filename = f"{uuid.uuid4().hex}_alpha.png"
+        alpha_path = os.path.join(RENDERS_DIR, alpha_filename)
+        alpha_url = f"https://render.marcoepiscopo.com/renders/{alpha_filename}"
+
         structure_name = first_file.name or "TEST STRUCTURE"
+
         render_technical_png(
             mesh=mesh,
             output_path=render_path,
@@ -261,7 +269,19 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             length=length,
             depth=depth,
             height=height,
-            unit=payload.unit_preference
+            unit=payload.unit_preference,
+            transparent=False
+        )
+
+        render_technical_png(
+            mesh=mesh,
+            output_path=alpha_path,
+            title=structure_name,
+            length=length,
+            depth=depth,
+            height=height,
+            unit=payload.unit_preference,
+            transparent=True
         )
 
         return {
@@ -284,7 +304,8 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             },
             "notes": f"Downloaded file to {temp_path} ({file_size} bytes). Render saved to {render_path}. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": render_url,
-            "render_preview_url": render_url
+            "render_preview_url": render_url,
+            "render_alpha_url": alpha_url
         }
 
     except Exception as e:
