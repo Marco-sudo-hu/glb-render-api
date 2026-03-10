@@ -199,7 +199,8 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             },
             "notes": f"Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": "",
-            "render_preview_url": ""
+            "render_preview_url": "",
+            "render_alpha_url": ""
         }
 
     if first_file is None or not first_file.download_link:
@@ -223,7 +224,8 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             },
             "notes": f"download_link missing. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": "",
-            "render_preview_url": ""
+            "render_preview_url": "",
+            "render_alpha_url": ""
         }
 
     suffix = ".glb"
@@ -245,7 +247,7 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
         scene_or_mesh = trimesh.load(temp_path, force="scene")
         mesh, component_count = scene_to_single_mesh(scene_or_mesh)
 
-                mins, maxs = mesh.bounds
+        mins, maxs = mesh.bounds
         size = maxs - mins
 
         length = float(size[0])
@@ -307,6 +309,8 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             "render_preview_url": render_url,
             "render_alpha_url": alpha_url
         }
+
+    except Exception as e:
         return {
             "success": False,
             "structure_name": first_file.name or "TEST STRUCTURE",
@@ -327,5 +331,6 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             },
             "notes": f"Analysis/render failed: {str(e)}. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": "",
-            "render_preview_url": ""
+            "render_preview_url": "",
+            "render_alpha_url": ""
         }
