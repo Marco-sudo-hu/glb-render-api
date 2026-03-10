@@ -245,14 +245,14 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
         scene_or_mesh = trimesh.load(temp_path, force="scene")
         mesh, component_count = scene_to_single_mesh(scene_or_mesh)
 
-        mins, maxs = mesh.bounds
+                mins, maxs = mesh.bounds
         size = maxs - mins
 
         length = float(size[0])
         depth = float(size[1])
         height = float(size[2])
 
-                render_filename = f"{uuid.uuid4().hex}.png"
+        render_filename = f"{uuid.uuid4().hex}.png"
         render_path = os.path.join(RENDERS_DIR, render_filename)
         render_url = f"https://render.marcoepiscopo.com/renders/{render_filename}"
 
@@ -302,13 +302,11 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
                 "unit": payload.unit_preference,
                 "reliable": False
             },
-            "notes": f"Downloaded file to {temp_path} ({file_size} bytes). Render saved to {render_path}. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
+            "notes": f"Downloaded file to {temp_path} ({file_size} bytes). Render saved to {render_path}. Alpha saved to {alpha_path}. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": render_url,
             "render_preview_url": render_url,
             "render_alpha_url": alpha_url
         }
-
-    except Exception as e:
         return {
             "success": False,
             "structure_name": first_file.name or "TEST STRUCTURE",
