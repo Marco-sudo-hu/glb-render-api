@@ -124,7 +124,7 @@ def render_technical_png(
     ax.set_ylim(mid[1] - max_range, mid[1] + max_range)
     ax.set_zlim(mid[2] - max_range, mid[2] + max_range)
 
-    ax.view_init(elev=20, azim=55)
+    ax.view_init(elev=20, azim=125)
     ax.set_axis_off()
 
     if not transparent:
