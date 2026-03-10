@@ -98,14 +98,16 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
         temp_path = tmp_file.name
 
     try:
-        response = requests.get(first_file.download_link, timeout=60)
+               response = requests.get(first_file.download_link, timeout=60)
         response.raise_for_status()
 
         with open(temp_path, "wb") as f:
             f.write(response.content)
 
         file_size = os.path.getsize(temp_path)
-                import trimesh
+
+        import trimesh
+        import numpy as np
 
         scene_or_mesh = trimesh.load(temp_path, force="scene")
 
@@ -120,7 +122,6 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             if not bounds_list:
                 raise ValueError("No valid mesh bounds found in GLB.")
 
-            import numpy as np
             mins = np.min([b[0] for b in bounds_list], axis=0)
             maxs = np.max([b[1] for b in bounds_list], axis=0)
         else:
@@ -142,11 +143,11 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             "components": [],
             "materials": [],
             "dimensions": {
-            "length": length,
-            "depth": depth,
-            "height": height,
-            "unit": payload.unit_preference
-        },
+                "length": length,
+                "depth": depth,
+                "height": height,
+                "unit": payload.unit_preference
+            },
             "thickness": {
                 "value": 0,
                 "unit": payload.unit_preference,
@@ -156,8 +157,6 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             "render_image_url": "",
             "render_preview_url": ""
         }
-
-    except Exception as e:
         return {
             "success": False,
             "structure_name": first_file.name or "TEST STRUCTURE",
