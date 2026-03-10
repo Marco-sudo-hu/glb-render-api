@@ -34,12 +34,13 @@ def root():
 @app.post("/analyze_and_render")
 def analyze_and_render(payload: AnalyzeRenderRequest):
     first_file = payload.openaiFileIdRefs[0] if payload.openaiFileIdRefs else None
+
     raw_refs = []
-for item in payload.openaiFileIdRefs:
-    if isinstance(item, str):
-        raw_refs.append({"type": "string", "value": item})
-    else:
-        raw_refs.append(item.model_dump())
+    for item in payload.openaiFileIdRefs:
+        if isinstance(item, str):
+            raw_refs.append({"type": "string", "value": item})
+        else:
+            raw_refs.append(item.model_dump())
 
     if isinstance(first_file, str):
         return {
@@ -123,7 +124,7 @@ for item in payload.openaiFileIdRefs:
                 "unit": payload.unit_preference,
                 "reliable": False
             },
-            "notes": f"Downloaded file to {temp_path} ({file_size} bytes).",
+            "notes": f"Downloaded file to {temp_path} ({file_size} bytes). Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": "",
             "render_preview_url": ""
         }
@@ -147,7 +148,7 @@ for item in payload.openaiFileIdRefs:
                 "unit": payload.unit_preference,
                 "reliable": False
             },
-            "notes": f"Download failed: {str(e)}",
+            "notes": f"Download failed: {str(e)}. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": "",
             "render_preview_url": ""
         }
