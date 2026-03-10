@@ -5,6 +5,8 @@ import tempfile
 import os
 import requests
 import json
+import trimesh
+import numpy as np
 
 app = FastAPI()
 
@@ -24,6 +26,11 @@ class AnalyzeRenderRequest(BaseModel):
     include_dimensions: Optional[bool] = True
     include_title: Optional[bool] = True
     unit_preference: Optional[str] = "mm"
+
+
+@app.get("/")
+def health():
+    return {"status": "ok", "service": "glb-render-api"}
 
 
 @app.get("/root")
@@ -98,16 +105,13 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
         temp_path = tmp_file.name
 
     try:
-               response = requests.get(first_file.download_link, timeout=60)
+        response = requests.get(first_file.download_link, timeout=60)
         response.raise_for_status()
 
         with open(temp_path, "wb") as f:
             f.write(response.content)
 
         file_size = os.path.getsize(temp_path)
-
-        import trimesh
-        import numpy as np
 
         scene_or_mesh = trimesh.load(temp_path, force="scene")
 
@@ -124,10 +128,12 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
 
             mins = np.min([b[0] for b in bounds_list], axis=0)
             maxs = np.max([b[1] for b in bounds_list], axis=0)
+            component_count = len(geometries)
         else:
             if not hasattr(scene_or_mesh, "bounds") or scene_or_mesh.bounds is None:
                 raise ValueError("No valid bounds found in GLB.")
             mins, maxs = scene_or_mesh.bounds
+            component_count = 1
 
         size = maxs - mins
 
@@ -140,7 +146,7 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             "structure_name": first_file.name or "TEST STRUCTURE",
             "detected_type": "downloaded_file",
             "shape_summary": "GLB file downloaded and mesh bounds calculated successfully.",
-            "components": [],
+            "components": [f"Detected geometries: {component_count}"],
             "materials": [],
             "dimensions": {
                 "length": length,
@@ -157,11 +163,13 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             "render_image_url": "",
             "render_preview_url": ""
         }
+
+    except Exception as e:
         return {
             "success": False,
             "structure_name": first_file.name or "TEST STRUCTURE",
             "detected_type": "download_error",
-            "shape_summary": "The file reference was received, but download failed.",
+            "shape_summary": "The file reference was received, but analysis failed.",
             "components": [],
             "materials": [],
             "dimensions": {
@@ -175,7 +183,7 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
                 "unit": payload.unit_preference,
                 "reliable": False
             },
-            "notes": f"Download failed: {str(e)}. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
+            "notes": f"Analysis failed: {str(e)}. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": "",
             "render_preview_url": ""
         }
