@@ -105,20 +105,48 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
             f.write(response.content)
 
         file_size = os.path.getsize(temp_path)
+                import trimesh
+
+        scene_or_mesh = trimesh.load(temp_path, force="scene")
+
+        if hasattr(scene_or_mesh, "geometry") and scene_or_mesh.geometry:
+            geometries = list(scene_or_mesh.geometry.values())
+
+            bounds_list = []
+            for geom in geometries:
+                if hasattr(geom, "bounds") and geom.bounds is not None:
+                    bounds_list.append(geom.bounds)
+
+            if not bounds_list:
+                raise ValueError("No valid mesh bounds found in GLB.")
+
+            import numpy as np
+            mins = np.min([b[0] for b in bounds_list], axis=0)
+            maxs = np.max([b[1] for b in bounds_list], axis=0)
+        else:
+            if not hasattr(scene_or_mesh, "bounds") or scene_or_mesh.bounds is None:
+                raise ValueError("No valid bounds found in GLB.")
+            mins, maxs = scene_or_mesh.bounds
+
+        size = maxs - mins
+
+        length = float(size[0])
+        depth = float(size[1])
+        height = float(size[2])
 
         return {
             "success": True,
             "structure_name": first_file.name or "TEST STRUCTURE",
             "detected_type": "downloaded_file",
-            "shape_summary": "GLB file downloaded successfully. Real mesh analysis not implemented yet.",
+            "shape_summary": "GLB file downloaded and mesh bounds calculated successfully.",
             "components": [],
             "materials": [],
             "dimensions": {
-                "length": 0,
-                "depth": 0,
-                "height": 0,
-                "unit": payload.unit_preference
-            },
+            "length": length,
+            "depth": depth,
+            "height": height,
+            "unit": payload.unit_preference
+        },
             "thickness": {
                 "value": 0,
                 "unit": payload.unit_preference,
