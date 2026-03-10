@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Optional, Union
+import tempfile
+import os
+import requests
 
 app = FastAPI()
 
@@ -22,7 +25,7 @@ class AnalyzeRenderRequest(BaseModel):
     unit_preference: Optional[str] = "mm"
 
 
-@app.get("/")
+@app.get("/root")
 def root():
     return {"status": "ok", "service": "glb-render-api"}
 
@@ -32,46 +35,112 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
     first_file = payload.openaiFileIdRefs[0] if payload.openaiFileIdRefs else None
 
     if isinstance(first_file, str):
-        file_info = {
-            "id": first_file,
-            "name": None,
-            "mime_type": None,
-            "download_link": None,
-        }
-    elif first_file is not None:
-        file_info = {
-            "id": first_file.id,
-            "name": first_file.name,
-            "mime_type": first_file.mime_type,
-            "download_link": first_file.download_link,
-        }
-    else:
-        file_info = {
-            "id": None,
-            "name": None,
-            "mime_type": None,
-            "download_link": None,
+        return {
+            "success": False,
+            "structure_name": "TEST STRUCTURE",
+            "detected_type": "stub",
+            "shape_summary": "Only a string file reference was received.",
+            "components": [],
+            "materials": [],
+            "dimensions": {
+                "length": 0,
+                "depth": 0,
+                "height": 0,
+                "unit": payload.unit_preference
+            },
+            "thickness": {
+                "value": 0,
+                "unit": payload.unit_preference,
+                "reliable": False
+            },
+            "notes": "No downloadable file object was received.",
+            "render_image_url": "",
+            "render_preview_url": ""
         }
 
-    return {
-        "success": True,
-        "structure_name": "TEST STRUCTURE",
-        "detected_type": "stub",
-        "shape_summary": "File reference received successfully. Real GLB analysis not implemented yet.",
-        "components": [],
-        "materials": [],
-        "dimensions": {
-            "length": 0,
-            "depth": 0,
-            "height": 0,
-            "unit": payload.unit_preference
-        },
-        "thickness": {
-            "value": 0,
-            "unit": payload.unit_preference,
-            "reliable": False
-        },
-        "notes": f"First file received: {file_info}",
-        "render_image_url": "",
-        "render_preview_url": ""
-    }
+    if first_file is None or not first_file.download_link:
+        return {
+            "success": False,
+            "structure_name": "TEST STRUCTURE",
+            "detected_type": "stub",
+            "shape_summary": "No downloadable file was received.",
+            "components": [],
+            "materials": [],
+            "dimensions": {
+                "length": 0,
+                "depth": 0,
+                "height": 0,
+                "unit": payload.unit_preference
+            },
+            "thickness": {
+                "value": 0,
+                "unit": payload.unit_preference,
+                "reliable": False
+            },
+            "notes": "download_link missing in openaiFileIdRefs.",
+            "render_image_url": "",
+            "render_preview_url": ""
+        }
+
+    suffix = ".glb"
+    if first_file.name and "." in first_file.name:
+        suffix = os.path.splitext(first_file.name)[1] or ".glb"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+        temp_path = tmp_file.name
+
+    try:
+        response = requests.get(first_file.download_link, timeout=60)
+        response.raise_for_status()
+
+        with open(temp_path, "wb") as f:
+            f.write(response.content)
+
+        file_size = os.path.getsize(temp_path)
+
+        return {
+            "success": True,
+            "structure_name": first_file.name or "TEST STRUCTURE",
+            "detected_type": "downloaded_file",
+            "shape_summary": "GLB file downloaded successfully. Real mesh analysis not implemented yet.",
+            "components": [],
+            "materials": [],
+            "dimensions": {
+                "length": 0,
+                "depth": 0,
+                "height": 0,
+                "unit": payload.unit_preference
+            },
+            "thickness": {
+                "value": 0,
+                "unit": payload.unit_preference,
+                "reliable": False
+            },
+            "notes": f"Downloaded file to {temp_path} ({file_size} bytes).",
+            "render_image_url": "",
+            "render_preview_url": ""
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "structure_name": first_file.name or "TEST STRUCTURE",
+            "detected_type": "download_error",
+            "shape_summary": "The file reference was received, but download failed.",
+            "components": [],
+            "materials": [],
+            "dimensions": {
+                "length": 0,
+                "depth": 0,
+                "height": 0,
+                "unit": payload.unit_preference
+            },
+            "thickness": {
+                "value": 0,
+                "unit": payload.unit_preference,
+                "reliable": False
+            },
+            "notes": f"Download failed: {str(e)}",
+            "render_image_url": "",
+            "render_preview_url": ""
+        }
