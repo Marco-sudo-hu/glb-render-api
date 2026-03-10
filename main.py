@@ -124,7 +124,7 @@ def render_technical_png(
     ax.set_zlim(mid[2] - max_range, mid[2] + max_range)
 
     # Technical 3/4 view
-    ax.view_init(elev=20, azim=125)
+    ax.view_init(elev=20, azim=55)
 
     # Clean technical look
     ax.set_axis_off()
