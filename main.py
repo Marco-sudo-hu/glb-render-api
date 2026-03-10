@@ -1,14 +1,23 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional, Union
 import tempfile
 import os
-import requests
 import json
+import uuid
+import requests
 import trimesh
 import numpy as np
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
 app = FastAPI()
+
+RENDERS_DIR = "/tmp/renders"
+os.makedirs(RENDERS_DIR, exist_ok=True)
 
 
 class OpenAIFileRef(BaseModel):
@@ -36,6 +45,123 @@ def health():
 @app.get("/root")
 def root():
     return {"status": "ok", "service": "glb-render-api"}
+
+
+@app.get("/renders/{filename}")
+def get_render(filename: str):
+    file_path = os.path.join(RENDERS_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Render not found")
+    return FileResponse(file_path, media_type="image/png")
+
+
+def scene_to_single_mesh(scene_or_mesh) -> tuple[trimesh.Trimesh, int]:
+    if hasattr(scene_or_mesh, "geometry") and scene_or_mesh.geometry:
+        meshes = []
+        for geom in scene_or_mesh.geometry.values():
+            if isinstance(geom, trimesh.Trimesh) and len(geom.vertices) > 0 and len(geom.faces) > 0:
+                meshes.append(geom)
+
+        if not meshes:
+            raise ValueError("No valid mesh geometries found in GLB.")
+
+        merged = trimesh.util.concatenate(meshes)
+        return merged, len(meshes)
+
+    if isinstance(scene_or_mesh, trimesh.Trimesh):
+        if len(scene_or_mesh.vertices) == 0 or len(scene_or_mesh.faces) == 0:
+            raise ValueError("Mesh has no valid geometry.")
+        return scene_or_mesh, 1
+
+    raise ValueError("Unsupported GLB content.")
+
+
+def render_technical_png(
+    mesh: trimesh.Trimesh,
+    output_path: str,
+    title: str,
+    length: float,
+    depth: float,
+    height: float,
+    unit: str
+) -> None:
+    vertices = mesh.vertices
+    faces = mesh.faces
+
+    if len(vertices) == 0 or len(faces) == 0:
+        raise ValueError("Cannot render empty mesh.")
+
+    fig = plt.figure(figsize=(12, 7), dpi=200)
+    fig.patch.set_facecolor("white")
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_facecolor("white")
+
+    # Center the mesh for a cleaner view
+    center = vertices.mean(axis=0)
+    v = vertices - center
+
+    ax.plot_trisurf(
+        v[:, 0],
+        v[:, 1],
+        v[:, 2],
+        triangles=faces,
+        color="lightgray",
+        edgecolor="black",
+        linewidth=0.15,
+        antialiased=True,
+        shade=False
+    )
+
+    # Equal aspect ratio
+    mins = v.min(axis=0)
+    maxs = v.max(axis=0)
+    spans = maxs - mins
+    max_range = spans.max() / 2.0
+    mid = (mins + maxs) / 2.0
+
+    ax.set_xlim(mid[0] - max_range, mid[0] + max_range)
+    ax.set_ylim(mid[1] - max_range, mid[1] + max_range)
+    ax.set_zlim(mid[2] - max_range, mid[2] + max_range)
+
+    # Technical 3/4 view
+    ax.view_init(elev=20, azim=-55)
+
+    # Clean technical look
+    ax.set_axis_off()
+
+    # Title top-left
+    fig.text(
+        0.03,
+        0.95,
+        title.upper(),
+        ha="left",
+        va="top",
+        fontsize=18,
+        color="black",
+        family="sans-serif",
+        weight="bold"
+    )
+
+    # Basic technical info bottom-left
+    dims_text = (
+        f"L: {length:.2f} {unit}\n"
+        f"P: {depth:.2f} {unit}\n"
+        f"H: {height:.2f} {unit}"
+    )
+    fig.text(
+        0.03,
+        0.08,
+        dims_text,
+        ha="left",
+        va="bottom",
+        fontsize=12,
+        color="black",
+        family="sans-serif"
+    )
+
+    plt.subplots_adjust(left=0.00, right=1.00, top=0.92, bottom=0.02)
+    plt.savefig(output_path, bbox_inches="tight", pad_inches=0.05, facecolor="white")
+    plt.close(fig)
 
 
 @app.post("/analyze_and_render")
@@ -114,38 +240,35 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
         file_size = os.path.getsize(temp_path)
 
         scene_or_mesh = trimesh.load(temp_path, force="scene")
+        mesh, component_count = scene_to_single_mesh(scene_or_mesh)
 
-        if hasattr(scene_or_mesh, "geometry") and scene_or_mesh.geometry:
-            geometries = list(scene_or_mesh.geometry.values())
-
-            bounds_list = []
-            for geom in geometries:
-                if hasattr(geom, "bounds") and geom.bounds is not None:
-                    bounds_list.append(geom.bounds)
-
-            if not bounds_list:
-                raise ValueError("No valid mesh bounds found in GLB.")
-
-            mins = np.min([b[0] for b in bounds_list], axis=0)
-            maxs = np.max([b[1] for b in bounds_list], axis=0)
-            component_count = len(geometries)
-        else:
-            if not hasattr(scene_or_mesh, "bounds") or scene_or_mesh.bounds is None:
-                raise ValueError("No valid bounds found in GLB.")
-            mins, maxs = scene_or_mesh.bounds
-            component_count = 1
-
+        mins, maxs = mesh.bounds
         size = maxs - mins
 
         length = float(size[0])
         depth = float(size[1])
         height = float(size[2])
 
+        render_filename = f"{uuid.uuid4().hex}.png"
+        render_path = os.path.join(RENDERS_DIR, render_filename)
+        render_url = f"https://render.marcoepiscopo.com/renders/{render_filename}"
+
+        structure_name = first_file.name or "TEST STRUCTURE"
+        render_technical_png(
+            mesh=mesh,
+            output_path=render_path,
+            title=structure_name,
+            length=length,
+            depth=depth,
+            height=height,
+            unit=payload.unit_preference
+        )
+
         return {
             "success": True,
-            "structure_name": first_file.name or "TEST STRUCTURE",
+            "structure_name": structure_name,
             "detected_type": "downloaded_file",
-            "shape_summary": "GLB file downloaded and mesh bounds calculated successfully.",
+            "shape_summary": "GLB file downloaded, mesh bounds calculated, and technical PNG generated successfully.",
             "components": [f"Detected geometries: {component_count}"],
             "materials": [],
             "dimensions": {
@@ -159,17 +282,17 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
                 "unit": payload.unit_preference,
                 "reliable": False
             },
-            "notes": f"Downloaded file to {temp_path} ({file_size} bytes). Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
-            "render_image_url": "",
-            "render_preview_url": ""
+            "notes": f"Downloaded file to {temp_path} ({file_size} bytes). Render saved to {render_path}. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
+            "render_image_url": render_url,
+            "render_preview_url": render_url
         }
 
     except Exception as e:
         return {
             "success": False,
             "structure_name": first_file.name or "TEST STRUCTURE",
-            "detected_type": "download_error",
-            "shape_summary": "The file reference was received, but analysis failed.",
+            "detected_type": "analysis_error",
+            "shape_summary": "The file was received, but analysis or PNG generation failed.",
             "components": [],
             "materials": [],
             "dimensions": {
@@ -183,7 +306,7 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
                 "unit": payload.unit_preference,
                 "reliable": False
             },
-            "notes": f"Analysis failed: {str(e)}. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
+            "notes": f"Analysis/render failed: {str(e)}. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": "",
             "render_preview_url": ""
         }
