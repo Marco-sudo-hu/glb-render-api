@@ -4,6 +4,7 @@ from typing import List, Optional, Union
 import tempfile
 import os
 import requests
+import json
 
 app = FastAPI()
 
@@ -33,6 +34,12 @@ def root():
 @app.post("/analyze_and_render")
 def analyze_and_render(payload: AnalyzeRenderRequest):
     first_file = payload.openaiFileIdRefs[0] if payload.openaiFileIdRefs else None
+    raw_refs = []
+for item in payload.openaiFileIdRefs:
+    if isinstance(item, str):
+        raw_refs.append({"type": "string", "value": item})
+    else:
+        raw_refs.append(item.model_dump())
 
     if isinstance(first_file, str):
         return {
@@ -53,7 +60,7 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
                 "unit": payload.unit_preference,
                 "reliable": False
             },
-            "notes": "No downloadable file object was received.",
+            "notes": f"Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": "",
             "render_preview_url": ""
         }
@@ -77,7 +84,7 @@ def analyze_and_render(payload: AnalyzeRenderRequest):
                 "unit": payload.unit_preference,
                 "reliable": False
             },
-            "notes": "download_link missing in openaiFileIdRefs.",
+            "notes": f"download_link missing. Raw openaiFileIdRefs: {json.dumps(raw_refs, ensure_ascii=False)}",
             "render_image_url": "",
             "render_preview_url": ""
         }
